@@ -2,7 +2,7 @@ import torch
 import itertools
 
 # convex hull of d unit vectors
-def solver_Simplex(objective: torch.FloatTensor):
+def solver_Simplex(objective: torch.FloatTensor) -> float:
   n = len(list(objective))
   max = float('-inf')
 
@@ -13,8 +13,9 @@ def solver_Simplex(objective: torch.FloatTensor):
       max = torch.dot(objective, vertex)
       best_point = vertex
 
-  print("Max is ", float(max), ", attained by ", best_point.tolist())
-
+  #print("Max is ", float(max), ", attained by ", best_point.tolist())
+  return float(max)
+  
 # convex set is d-dim unit square
 def solver_Square(objective: torch.FloatTensor):
   n = len(list(objective))
@@ -27,10 +28,11 @@ def solver_Square(objective: torch.FloatTensor):
       max = torch.dot(objective, vertex)
       best_point = vertex
 
-  print("Max is ", float(max), ", attained by ", best_point.tolist())
+  #print("Max is ", float(max), ", attained by ", best_point.tolist())
+  return float(max)
 
 # convex hull of a given set of d-dim vectors, points is a list containing vectors (lists)
-def solver_ConvHull(objective: torch.FloatTensor, points: list):
+def solver_ConvHull(objective: torch.FloatTensor, points: list) -> float:
   max = float('-inf')
   
   for i in range(len(points)):
@@ -39,7 +41,8 @@ def solver_ConvHull(objective: torch.FloatTensor, points: list):
       max = torch.dot(objective, vertex)
       best_point = torch.FloatTensor(points[i])
 
-  print("Max is ", float(max), ", attained by ", best_point.tolist())
+  #print("Max is ", float(max), ", attained by ", best_point.tolist())
+  return float(max)
 
 #---------------------------------------------------------------------
 
@@ -65,39 +68,9 @@ def left(node):
 def right(node):
     return (node[0],node[1]+1)
 
-def backtrack(distances):
+def dijkstra(weights) -> float:
     initial_node = [0,0]
-    desired_node = [weights.shape[0],weights.shape[0]]
-    # idea start at the last node then choose the least number of steps to go back
-    # last node
-    path = [desired_node]
-
-    size_of_grid = distances.shape[0]
-
-    while True:
-        # check up down left right - choose the direction that has the least distance
-        potential_distances = []
-        potential_nodes = []
-
-        directions = [up,down,left,right]
-
-        for direction in directions:
-            node = direction(path[-1])
-            if valid_node(node, size_of_grid):
-                potential_nodes.append(node)
-                potential_distances.append(distances[node[0],node[1]])
-
-        least_distance_index = np.argmin(potential_distances)
-        path.append(potential_nodes[least_distance_index])
-
-        if path[-1][0] == initial_node[0] and path[-1][1] == initial_node[1]:
-            break
-
-    return list(reversed(path))
-
-def dijkstra(weights):
-    initial_node = [0,0]
-    desired_node = [weights.shape[0],weights.shape[0]]
+    desired_node = [weights.shape[0] - 1,weights.shape[0] - 1]
     """Dijkstras algorithm for finding the shortest path between two nodes in a graph.
 
     Args:
@@ -111,8 +84,8 @@ def dijkstra(weights):
     # initialize vertex weights
     weights = weights.copy()
     # source and destination are free
-    weights[initial_node[0],initial_node[1]]
-    weights[desired_node[0],desired_node[1]]
+    weights[initial_node[0],initial_node[1]] = 0
+    weights[desired_node[0],desired_node[1]] = 0
 
 
     # initialize maps for distances and visited nodes
@@ -120,6 +93,9 @@ def dijkstra(weights):
 
     # we only want to visit nodes once
     visited = np.zeros([size_of_floor,size_of_floor],bool)
+
+    # store predecessor on current shortest path
+    predecessor = np.zeros((size_of_floor,size_of_floor,2), int)
 
     # initiate matrix to keep track of distance to source node
     # initial distance to nodes is infinity so we always get a lower actual distance
@@ -142,13 +118,14 @@ def dijkstra(weights):
                     # update distance if it is the shortest discovered
                     if distance < distances[potential_node[0],potential_node[1]]:
                         distances[potential_node[0],potential_node[1]] = distance
+                        predecessor[potential_node[0],potential_node[1], 0] = current_node[0]
+                        predecessor[potential_node[0],potential_node[1], 1] = current_node[1]
 
 
         # mark current node as visited
         visited[current_node[0]  ,current_node[1]] = True
 
-        # select next node
-        # by choosing the the shortest path so far
+        # select next node by choosing the the shortest path so far
         t=distances.copy()
         # we don't want to visit nodes that have already been visited
         t[np.where(visited)]=np.inf
@@ -165,15 +142,24 @@ def dijkstra(weights):
         if current_node[0] == desired_node[0] and current_node[1]==desired_node[1]:
             break
 
+    return distances[size_of_floor - 1][size_of_floor - 1]
+
+
     # backtrack to construct path
-    return backtrack(distances)
+    path = [desired_node]
+    current = desired_node
+    while current != initial_node:
+      path.append([predecessor[current[0], current[1], 0], predecessor[current[0], current[1], 1]])
+      current = [predecessor[current[0], current[1], 0], predecessor[current[0], current[1], 1]]
+    
+    # return list(reversed(path))
 
 
-
-### Usage:
 '''
+### Usage:
+
 import matplotlib.pyplot as plt
-weights = np.array([[2,0,1,4,0,1,3,2,0,0],
+weights = np.array([[2,2,1,4,0,1,3,2,0,0],
                       [0,0,0,0,0,2,0,3,0,0],
                       [0,0,0,0,1,0,0,0,0,0],
                       [0,0,2,1,0,1,0,0,0,0],
@@ -183,14 +169,16 @@ weights = np.array([[2,0,1,4,0,1,3,2,0,0],
                       [0,0,2,0,0,1,0,0,3,0],
                       [0,0,0,0,1,0,0,0,0,0],
                       [0,0,2,0,2,0,0,4,0,0]], dtype=float)
-path = dijkstra(obstacles)
-print(path)
 
-    
-p = np.zeros(shape=obstacles.shape)
+print(dijkstra(weights))
+
+### Plotting
+
+path = dijkstra(weights)
+p = np.zeros(shape=weights.shape)
 for i in range(len(path)):
     p[path[i][0],path[i][1]] = np.nan
 
-plt.imshow(p+obstacles, cmap='jet')
+plt.imshow(p+weights, cmap='jet')
 plt.show()
 '''
