@@ -1,4 +1,5 @@
 from typing import Any
+import string
 import torch
 from torch import nn
 
@@ -15,20 +16,26 @@ class COptFunction(torch.autograd.Function):
         ctx.num_samples = num_samples
         ctx.smoothing = smoothing
 
-        return solver(x)
+        sol = solver(x)
+        ctx.out_dim = sol.shape
+        return sol
 
     @staticmethod
-    def backward(ctx: Any, *grad_outputs: Any) -> tuple[torch.Tensor, None]:
+    def backward(ctx: Any, *grad_outputs: Any) -> tuple[torch.Tensor, None, None, None]:
         x, = ctx.saved_tensors
-        solver, num_samples, smoothing = ctx.solver, ctx.num_samples, ctx.smoothing
-        # TODO: Make `solver` have the attribute `solver.out_dim` --> Otherwise we need to call `solver(x)` to get out_dim
-        grad = torch.zeros((solver.out_dim, x.shape), dtype=torch.float32, device=x.device)
+        solver, num_samples, smoothing, out_dim = ctx.solver, ctx.num_samples, ctx.smoothing, ctx.out_dim
+        grad = torch.zeros((*ctx.out_dim, *(x.shape[1:])), dtype=torch.float32, device=x.device)
+
+        einsum_str = generate_einsum_string_batched(out_dim, x.shape)
         for _ in range(num_samples):
             z = torch.randn_like(x, dtype=torch.float32, device=x.device)
             solution = solver(x + smoothing * z)
-            grad += torch.outer(solution, z)
+            grad += torch.einsum(einsum_str, solution, z)
 
-        return grad / smoothing * grad_outputs
+        grad_output_tensor = grad_outputs[0]
+        grad_output_tensor = grad_output_tensor.unsqueeze(-1)
+
+        return grad / (num_samples * smoothing) * grad_output_tensor, None, None, None
 
 
 class COptLayer(nn.Module):
@@ -50,6 +57,22 @@ class COptLayer(nn.Module):
         :return: (torch.tensor) output of `solver` given input `x`
         """
         return COptFunction.apply(x,
-                                  solver=self.solver,
-                                  num_samples=self.num_samples,
-                                  smoothing=self.smoothing)
+                                  self.solver,
+                                  self.num_samples,
+                                  self.smoothing)
+
+
+def generate_einsum_string_batched(a_shape, b_shape):
+    """
+        Generates the string for Einstein summation (torch.einsum) to compute ab^T as (*a.shape, *b.shape) tensor
+    """
+    a_dims = len(a_shape) - 1
+    b_dims = len(b_shape) - 1
+    all_letters = string.ascii_lowercase
+    batch_letter = 'z'
+    a_letters = all_letters[:a_dims]
+    b_letters = all_letters[a_dims:a_dims + b_dims]
+    input_str = f'{batch_letter}{a_letters},{batch_letter}{b_letters}'
+    output_str = f'{batch_letter}{a_letters}{b_letters}'
+    einsum_str = f'{input_str}->{output_str}'
+    return einsum_str
