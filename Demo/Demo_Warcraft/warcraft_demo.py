@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from COptLayer import COptLayer
+from losses import PerturbedLoss
 from solvers import solver_dijkstra
 
 
@@ -163,7 +164,7 @@ class VertexWeightCNN(nn.Module):
         x = nn.ReLU()(x)
         x = nn.MaxPool2d(kernel_size=2)(x)        # (b, 32, 12, 12)
 
-        return self.final_layer(x)
+        return nn.Softplus()(self.final_layer(x)).squeeze(1)
 
 
 class ShortestPathModel(nn.Module):
@@ -179,19 +180,46 @@ class ShortestPathModel(nn.Module):
         return self.DijkstraLayer(weights.squeeze(1))
 
 
-class PerturbedLoss(nn.Module):
-    def __init__(self, num_samples=10, smoothing=1.0):
-        super().__init__()
-        self.num_samples = num_samples
-        self.smoothing = smoothing
+def test_pertLoss():
+    model = VertexWeightCNN()
+    solver = dijkstra
+    loss_fn = PerturbedLoss(dijkstra, objective='min', num_samples=10, smoothing=1.0)
 
-    def forward(self, theta):
-        z = torch.rand((self.num_samples, *theta.shape))
-        # TODO ...
-        ...
+    epochs = 500
+    lr = 1e-3
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    maps = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_maps.npy")
+    vertex_weights = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_vertex_weights.npy")
+    shortest_paths = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_shortest_paths.npy")
+
+    # train on one sample data point
+    i = np.random.randint(low=0, high=1000)
+    map = torch.tensor(maps[i], dtype=torch.float32).permute((2, 0, 1)).unsqueeze(0)
+    vertex_weight = torch.tensor(vertex_weights[i], dtype=torch.float32)
+    shortest_path = torch.tensor(shortest_paths[i], dtype=torch.float32)
+
+    print(f"map.shape == {map.shape}")
+    for _ in range(epochs):
+        optimizer.zero_grad()
+        vertex_weight_pred = model(map)
+        path = solver(vertex_weight_pred.squeeze(1))
+        loss = loss_fn(vertex_weight_pred, shortest_path)
+        print(f"Loss after {_} Epochs: {loss.item()}")
+        loss.backward()
+        optimizer.step()
+
+        if _ % 10 == 0:
+            fig, ax = plt.subplots(ncols=2, nrows=2)
+            ax[0, 0].imshow(vertex_weight.detach().numpy())
+            ax[0, 1].imshow(model(map).detach().numpy()[0])
+            ax[1, 0].imshow(shortest_path.detach().numpy())
+            ax[1, 1].imshow(path[0].detach().numpy())
+            plt.show()
 
 
 if __name__ == "__main__":
+    test_pertLoss()
     epochs = 500
     lr = 1e-2
 
