@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from COptLayer import COptLayer
+from solvers import solver_dijkstra
 
 
 def valid_node(node, size_of_grid):
@@ -174,8 +175,20 @@ class ShortestPathModel(nn.Module):
                                        smoothing=smoothing)
 
     def forward(self, x):
-        weights = self.vertexWeightModel(x)        # require non-negative weights
+        weights = nn.Softplus()(self.vertexWeightModel(x))   # require non-negative weights
         return self.DijkstraLayer(weights.squeeze(1))
+
+
+class PerturbedLoss(nn.Module):
+    def __init__(self, num_samples=10, smoothing=1.0):
+        super().__init__()
+        self.num_samples = num_samples
+        self.smoothing = smoothing
+
+    def forward(self, theta):
+        z = torch.rand((self.num_samples, *theta.shape))
+        # TODO ...
+        ...
 
 
 if __name__ == "__main__":
@@ -183,7 +196,7 @@ if __name__ == "__main__":
     lr = 1e-2
 
     model = ShortestPathModel(num_samples=10,
-                              smoothing=0.1)
+                              smoothing=1.0)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     maps = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_maps.npy")
@@ -194,13 +207,15 @@ if __name__ == "__main__":
     i = np.random.randint(low=0, high=1000)
     map = torch.tensor(maps[i], dtype=torch.float32).permute((2, 0, 1)).unsqueeze(0)
     vertex_weight = torch.tensor(vertex_weights[i], dtype=torch.float32)
-    shortest_path = shortest_paths[i]
+    shortest_path = torch.tensor(shortest_paths[i], dtype=torch.float32)
 
     print(f"map.shape == {map.shape}")
     for _ in range(epochs):
         optimizer.zero_grad()
-        path = model(map)
-        loss = (path * vertex_weight).sum(dim=0).mean()
+        vertex_weight_pred = nn.Softplus()(model.vertexWeightModel(map))
+        path = model.DijkstraLayer(vertex_weight_pred.squeeze(1))
+        # we switch the two parts in our loss, since we have a minimization problem, cf. (6) in paper
+        loss = ((shortest_path * vertex_weight_pred).sum(dim=0) - (path * vertex_weight_pred).sum(dim=0)).mean()
         print(f"Loss aftere {_} Epochs: {loss.item()}")
         loss.backward()
         optimizer.step()
@@ -209,6 +224,14 @@ if __name__ == "__main__":
             fig, ax = plt.subplots(ncols=2, nrows=2)
             ax[0, 0].imshow(vertex_weight.detach().numpy())
             ax[0, 1].imshow(model.vertexWeightModel(map).detach().numpy()[0, 0])
-            ax[1, 0].imshow(shortest_path)
+            ax[1, 0].imshow(shortest_path.detach().numpy())
             ax[1, 1].imshow(path[0].detach().numpy())
             plt.show()
+
+    """
+        Problem: Our loss is given by theta^T (predicted path) - theta^T (true shortest path). 
+                This loss is always non-negative. However, we can trivially minimize this loss by letting theta -> 0. 
+                In the paper they suggest to instead use the regularized loss \mathcal L_\epsilon, cf. (7), 
+                to prevent the "solution" theta=0.
+                --> TODO: Implement this. 
+    """
