@@ -18,9 +18,10 @@ class PerturbedLossFct(torch.autograd.Function):
         p_shape = params.shape
         n, b = p_shape[0], p_shape[1]
         params = params.view(n*b, *p_shape[2:])         # shape (n*b, h, w)
+        solution = solver(params)
 
-        ctx.y, ctx.objective, ctx.solver, ctx.params = (
-                y, objective, solver, params)               # store for backward function
+        ctx.y, ctx.objective, ctx.solver, ctx.params, ctx.solution = (
+                y, objective, solver, params, solution)               # store for backward function
         ctx.n, ctx.b, = n, b
 
         if objective == 'min':
@@ -34,14 +35,14 @@ class PerturbedLossFct(torch.autograd.Function):
     def backward(ctx: Any, *grad_outputs: Any) -> Any:
         grad_output_tensor = grad_outputs[0]
         grad_output_tensor = grad_output_tensor.unsqueeze(-1)
-        params = ctx.params
+        params, solution = ctx.params, ctx.solution
         p_shape = params.shape
         n, b = ctx.n, ctx.b
 
         if ctx.objective == 'min':
-            return (ctx.y - (ctx.solver(ctx.params).view(n, b, *p_shape[1:]).mean(dim=0))) * grad_output_tensor, None, None, None, None, None
+            return (ctx.y - (solution.view(n, b, *p_shape[1:]).mean(dim=0))) * grad_output_tensor, None, None, None, None, None
 
-        return (ctx.solver(ctx.params).view(n, b, *p_shape[1:]).mean(dim=0) - ctx.y) * grad_output_tensor, None, None, None, None, None
+        return (solution.view(n, b, *p_shape[1:]).mean(dim=0) - ctx.y) * grad_output_tensor, None, None, None, None, None
 
 
 class PerturbedLoss(nn.Module):
