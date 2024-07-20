@@ -13,7 +13,7 @@ class PerturbedLossFct(torch.autograd.Function):
                 num_samples: int,
                 smoothing: float
                 ) -> Any:
-        z = torch.rand((num_samples, *theta.shape))
+        z = torch.rand((num_samples, *theta.shape), device=theta.device)
         params = theta + smoothing * z          # shape (n, b, h, w)
         p_shape = params.shape
         n, b = p_shape[0], p_shape[1]
