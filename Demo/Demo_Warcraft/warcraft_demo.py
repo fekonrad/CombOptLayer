@@ -2,9 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
+from torch.utils.data import DataLoader
 from COptLayer import COptLayer
 from losses import PerturbedLoss
 from solvers import solver_dijkstra
+from warcraft_data import WarcraftPaths
 
 
 def valid_node(node, size_of_grid):
@@ -181,85 +183,52 @@ class ShortestPathModel(nn.Module):
 
 
 def test_pertLoss():
-    model = VertexWeightCNN()
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = VertexWeightCNN().to(DEVICE)
     solver = dijkstra
     loss_fn = PerturbedLoss(dijkstra, objective='min', num_samples=10, smoothing=1.0)
 
-    epochs = 500
+    epochs = 10
     lr = 1e-3
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    maps = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_maps.npy")
-    vertex_weights = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_vertex_weights.npy")
-    shortest_paths = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_shortest_paths.npy")
+    data = WarcraftPaths("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_maps.npy",
+                         "warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_vertex_weights.npy",
+                         "warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_shortest_paths.npy")
+    dataloader = DataLoader(data, batch_size=16, shuffle=True)
+    steps = 0
+    loss_vals = []
 
-    # train on one sample data point
-    i = np.random.randint(low=0, high=1000)
-    map = torch.tensor(maps[i], dtype=torch.float32).permute((2, 0, 1)).unsqueeze(0)
-    vertex_weight = torch.tensor(vertex_weights[i], dtype=torch.float32)
-    shortest_path = torch.tensor(shortest_paths[i], dtype=torch.float32)
-
-    print(f"map.shape == {map.shape}")
     for _ in range(epochs):
-        optimizer.zero_grad()
-        vertex_weight_pred = model(map)
-        path = solver(vertex_weight_pred.squeeze(1))
-        loss = loss_fn(vertex_weight_pred, shortest_path)
-        print(f"Loss after {_} Epochs: {loss.item()}")
-        loss.backward()
-        optimizer.step()
+        for maps, weights, paths in dataloader:
+            maps, weights, paths = maps.to(DEVICE), weights.to(DEVICE), paths.to(DEVICE)
+
+            optimizer.zero_grad()
+            vertex_weight_pred = model(maps)
+            paths_pred = solver(vertex_weight_pred.squeeze(1))
+            loss = loss_fn(vertex_weight_pred, paths)
+            loss_val = loss.item()
+            loss_vals.append(loss_val)
+            print(f"Loss after {steps} Steps: {loss_val}")
+            loss.backward()
+            optimizer.step()
+            steps += 1
 
         if _ % 10 == 0:
             fig, ax = plt.subplots(ncols=2, nrows=2)
-            ax[0, 0].imshow(vertex_weight.detach().numpy())
-            ax[0, 1].imshow(model(map).detach().numpy()[0])
-            ax[1, 0].imshow(shortest_path.detach().numpy())
-            ax[1, 1].imshow(path[0].detach().numpy())
+            ax[0, 0].imshow(weights[0].detach().numpy())
+            ax[0, 1].imshow(model(maps).detach().numpy()[0])
+            ax[1, 0].imshow(paths[0].detach().numpy())
+            ax[1, 1].imshow(paths_pred[0].detach().numpy())
             plt.show()
+
+    plt.plot(loss_vals)
+    plt.xlabel("Steps")
+    plt.ylabel("Perturbed Loss")
+    plt.show()
 
 
 if __name__ == "__main__":
     test_pertLoss()
-    epochs = 500
-    lr = 1e-2
-
-    model = ShortestPathModel(num_samples=10,
-                              smoothing=1.0)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
-    maps = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_maps.npy")
-    vertex_weights = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_vertex_weights.npy")
-    shortest_paths = np.load("warcraft_maps/warcraft_shortest_path_oneskin/12x12/test_shortest_paths.npy")
-
-    # train on one sample data point
-    i = np.random.randint(low=0, high=1000)
-    map = torch.tensor(maps[i], dtype=torch.float32).permute((2, 0, 1)).unsqueeze(0)
-    vertex_weight = torch.tensor(vertex_weights[i], dtype=torch.float32)
-    shortest_path = torch.tensor(shortest_paths[i], dtype=torch.float32)
-
-    print(f"map.shape == {map.shape}")
-    for _ in range(epochs):
-        optimizer.zero_grad()
-        vertex_weight_pred = nn.Softplus()(model.vertexWeightModel(map))
-        path = model.DijkstraLayer(vertex_weight_pred.squeeze(1))
-        # we switch the two parts in our loss, since we have a minimization problem, cf. (6) in paper
-        loss = ((shortest_path * vertex_weight_pred).sum(dim=0) - (path * vertex_weight_pred).sum(dim=0)).mean()
-        print(f"Loss aftere {_} Epochs: {loss.item()}")
-        loss.backward()
-        optimizer.step()
-
-        if _ % 10 == 0:
-            fig, ax = plt.subplots(ncols=2, nrows=2)
-            ax[0, 0].imshow(vertex_weight.detach().numpy())
-            ax[0, 1].imshow(model.vertexWeightModel(map).detach().numpy()[0, 0])
-            ax[1, 0].imshow(shortest_path.detach().numpy())
-            ax[1, 1].imshow(path[0].detach().numpy())
-            plt.show()
-
-    """
-        Problem: Our loss is given by theta^T (predicted path) - theta^T (true shortest path). 
-                This loss is always non-negative. However, we can trivially minimize this loss by letting theta -> 0. 
-                In the paper they suggest to instead use the regularized loss \mathcal L_\epsilon, cf. (7), 
-                to prevent the "solution" theta=0.
-                --> TODO: Implement this. 
-    """
+    
