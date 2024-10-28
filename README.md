@@ -25,5 +25,12 @@ $$\frac{1}{n}\sum_{i=1}^n f(\theta + s Z_i), \hspace{1cm} Z_i\sim \mathcal N(0, 
 For more mathematical details about the forward- and backward-propagation of Combinatorial Optimization Layers, see ???
 
 A few example usages can be found under the `Demo` directory. 
+
+# Parallelized Solvers 
+We provide a wrapper which, given a python function that solves one instance of a combinatorial optimization problem on a `torch.Tensor` of shape `input_dim`, returns a callable function that can solve multiple instances of the combinatorial optimization problem on batched inputs of shape `(batch_size, *input_dim)`. 
+This is done via the numba library, which compiles the python function to a CUDA kernel.
+For an example usage, see [Demo](#Demos).
 # Demos 
+
 *(TODO)*
+## Compiling Parallelized Solvers

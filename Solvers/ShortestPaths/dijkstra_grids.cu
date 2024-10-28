@@ -85,7 +85,6 @@ void dijkstra_grid_kernel(float* weight_tens, float* solution, int b, int h, int
 }
 
 
-
 torch::Tensor dijkstra_grid(torch::Tensor weight_tens) {
     // Step 1: Allocate memory on GPU and copy contents from Host to Device
     int batch_size = weight_tens.size(0); 
