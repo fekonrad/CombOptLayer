@@ -13,8 +13,7 @@ Note that an implementation of Combinatorial Optimization Layers already exists 
 
 # How To Use 
 The main functionality of this repo is the `COptLayer`. It is an `nn.Module` which takes the following arguments at initialization: 
-- `solver`: Method, representing the solver of a combinatorial optimization problen, that takes a as an input a `torch.Tensor` of shape `(b, *input_dim)` (where `input_dim` is the dimensionality of the argument of the solver) 
-- and returns a `torch.Tensor` of shape `(b, *sol_dim)`. 
+- `solver`: Method, representing the solver of a combinatorial optimization problen, that takes a as an input a `torch.Tensor` of shape `(b, *input_dim)` (where `input_dim` is the dimensionality of the argument of the solver)  and returns a `torch.Tensor` of shape `(b, *sol_dim)`. 
 - `num_samples`: Number of samples taken in the Monte-Carlo estimation
 - `smoothing`: ...
 
@@ -31,6 +30,8 @@ We provide a wrapper which, given a python function that solves one instance of 
 This is done via the numba library, which compiles the python function to a CUDA kernel.
 For an example usage, see [Demo](#Demos).
 # Demos 
+## Shortest Paths on Warcraft Maps 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fekonrad/CombOptLayer/blob/main/Demo/COptLayer_Warcraft_Demo.ipynb)
 
-*(TODO)*
-## Compiling Parallelized Solvers
+## Stochastic Vehicle Scheduling 
+**TODO!**
